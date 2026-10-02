@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "UrbanSync: Start Server (FastAPI + ML)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "backend.server:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8080",
+        "--reload"
+      ],
+      "jinja": true,
+      "justMyCode": true,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "UrbanSync: Seed Database",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/seed.py",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "UrbanSync: Run Test Suite",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/test_system.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}

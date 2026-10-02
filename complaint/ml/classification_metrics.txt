@@ -1,0 +1,28 @@
+URBANSYNC ML COMPONENT 1: COMPLAINT CLASSIFICATION REPORT
+============================================================
+Algorithm: TF-IDF + Logistic Regression
+Accuracy:           84.21%
+Weighted F1-Score:  84.17%
+Macro F1-Score:     77.74%
+
+                             precision    recall  f1-score   support
+
+          Animal Management     0.9241    0.8639    0.8930       169
+        Drainage & Sewerage     0.8325    0.8535    0.8429       198
+                Electricity     0.8852    0.8438    0.8640        64
+       Other Civic Services     0.3934    0.3934    0.3934        61
+                  Pollution     0.7431    0.8438    0.7902        96
+   Public Safety & Security     0.5714    0.3636    0.4444        22
+Public Toilets & Sanitation     0.8986    0.8267    0.8611        75
+           Public Transport     0.7742    0.7273    0.7500        33
+          Roads & Footpaths     0.8189    0.8684    0.8429       760
+     Solid Waste Management     0.8982    0.8869    0.8925       716
+      Stormwater & Flooding     0.6909    0.7037    0.6972        54
+            Street Lighting     0.8964    0.9184    0.9073       245
+      Traffic & Road Safety     0.8127    0.7850    0.7986       293
+            Trees & Gardens     0.9016    0.7783    0.8354       212
+               Water Supply     0.8140    0.8861    0.8485        79
+
+                   accuracy                         0.8421      3077
+                  macro avg     0.7903    0.7695    0.7774      3077
+               weighted avg     0.8432    0.8421    0.8417      3077

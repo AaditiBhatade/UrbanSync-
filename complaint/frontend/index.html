@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UrbanSync — Connecting Citizens. Coordinating Cities.</title>
+  <meta name="description" content="UrbanSync is a smart city civic complaint platform for reporting, classifying, and routing municipal infrastructure issues." />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+  <!-- UrbanSync Design System Stylesheet -->
+  <link rel="stylesheet" href="/static/css/style.css?v=3" />
+</head>
+<body>
+  <!-- Global Top Navbar -->
+  <nav class="navbar">
+    <a href="/" class="nav-brand" onclick="event.preventDefault(); navigate('/');">
+      <span style="font-size:1.4rem;">🏙️</span>
+      <span>UrbanSync</span>
+      <span class="brand-badge">Smart City</span>
+    </a>
+
+    <div id="navbar-right" class="nav-links">
+      <!-- Injected dynamically by app.js -->
+    </div>
+  </nav>
+
+  <!-- Notification Drawer -->
+  <div id="notif-drawer" class="notif-drawer"></div>
+
+  <!-- Main Application Root -->
+  <div id="app-root"></div>
+
+  <!-- Toast Notification Center -->
+  <div id="toast-container" style="position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; max-width:380px; width:100%;"></div>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- Application Modules -->
+  <script src="/static/js/app.js?v=3"></script>
+  <script src="/static/js/auth.js?v=3"></script>
+  <script src="/static/js/citizen.js?v=3"></script>
+  <script src="/static/js/admin.js?v=3"></script>
+  <script src="/static/js/superadmin.js?v=3"></script>
+</body>
+</html>

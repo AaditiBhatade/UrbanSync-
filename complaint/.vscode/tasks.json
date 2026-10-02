@@ -1,0 +1,28 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start UrbanSync Server",
+      "type": "shell",
+      "command": "python -m uvicorn backend.server:app --host 127.0.0.1 --port 8080 --reload",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Seed Database",
+      "type": "shell",
+      "command": "python seed.py",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Verification Test Suite",
+      "type": "shell",
+      "command": "python test_system.py",
+      "problemMatcher": []
+    }
+  ]
+}

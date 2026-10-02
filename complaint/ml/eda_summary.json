@@ -1,0 +1,36 @@
+{
+  "dataset_name": "Mumbai BMC Civic Complaints Dataset v2",
+  "total_records": 16006,
+  "total_columns": 11,
+  "exact_duplicates": 2,
+  "text_duplicates": 592,
+  "text_statistics": {
+    "average_characters": 267.2,
+    "median_characters": 210.0,
+    "average_words": 47.0,
+    "median_words": 37.0
+  },
+  "geographic_bounds": {
+    "min_latitude": 18.91,
+    "max_latitude": 19.25,
+    "min_longitude": 72.8,
+    "max_longitude": 72.96
+  },
+  "category_counts": {
+    "Roads & Footpaths": 3969,
+    "Solid Waste Management": 3764,
+    "Traffic & Road Safety": 1509,
+    "Street Lighting": 1330,
+    "Trees & Gardens": 1076,
+    "Drainage & Sewerage": 1001,
+    "Animal Management": 865,
+    "Pollution": 485,
+    "Public Toilets & Sanitation": 429,
+    "Water Supply": 398,
+    "Electricity": 322,
+    "Other Civic Services": 312,
+    "Stormwater & Flooding": 275,
+    "Public Transport": 162,
+    "Public Safety & Security": 109
+  }
+}

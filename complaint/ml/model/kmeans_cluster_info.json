@@ -1,0 +1,68 @@
+[
+  {
+    "cluster_id": 0,
+    "zone_name": "Central Mumbai (Parel / Dadar / Wadala)",
+    "centroid_latitude": 19.00199,
+    "centroid_longitude": 72.836203,
+    "complaint_count": 3332,
+    "percentage": 20.82,
+    "top_ward": "F South",
+    "top_location": "Parel, F South Ward, Mumbai, Maharashtra, India",
+    "color": "#2563EB"
+  },
+  {
+    "cluster_id": 1,
+    "zone_name": "Western Suburbs (Andheri / Jogeshwari / Vile Parle)",
+    "centroid_latitude": 19.147346,
+    "centroid_longitude": 72.850029,
+    "complaint_count": 2732,
+    "percentage": 17.07,
+    "top_ward": "K East",
+    "top_location": "Andheri East, K East Ward, Mumbai, Maharashtra, India",
+    "color": "#059669"
+  },
+  {
+    "cluster_id": 2,
+    "zone_name": "Eastern Suburbs (Kurla / Chembur / Govandi)",
+    "centroid_latitude": 19.068084,
+    "centroid_longitude": 72.883398,
+    "complaint_count": 3940,
+    "percentage": 24.62,
+    "top_ward": "M East",
+    "top_location": "Govandi, M East Ward, Mumbai, Maharashtra, India",
+    "color": "#D97706"
+  },
+  {
+    "cluster_id": 3,
+    "zone_name": "Northern Suburbs (Borivali / Kandivali / Dahisar)",
+    "centroid_latitude": 19.227093,
+    "centroid_longitude": 72.853677,
+    "complaint_count": 1961,
+    "percentage": 12.25,
+    "top_ward": "R Central",
+    "top_location": "Borivali, R Central Ward, Mumbai, Maharashtra, India",
+    "color": "#DC2626"
+  },
+  {
+    "cluster_id": 4,
+    "zone_name": "North-Eastern Suburbs (Bhandup / Mulund)",
+    "centroid_latitude": 19.154793,
+    "centroid_longitude": 72.949862,
+    "complaint_count": 1306,
+    "percentage": 8.16,
+    "top_ward": "S",
+    "top_location": "Bhandup, S Ward, Mumbai, Maharashtra, India",
+    "color": "#7C3AED"
+  },
+  {
+    "cluster_id": 5,
+    "zone_name": "South Mumbai (Colaba / Fort / Marine Lines)",
+    "centroid_latitude": 18.942055,
+    "centroid_longitude": 72.817287,
+    "complaint_count": 2735,
+    "percentage": 17.09,
+    "top_ward": "A",
+    "top_location": "Colaba, A Ward, Mumbai, Maharashtra, India",
+    "color": "#DB2777"
+  }
+]
