@@ -14,6 +14,11 @@ function renderAdminSidebar(activeRoute = "") {
             </a>
           </li>
           <li class="sidebar-item">
+            <a href="/admin/workers" class="${activeRoute === '/admin/workers' ? 'active' : ''}" onclick="event.preventDefault(); navigate('/admin/workers');">
+              👷 <span>Field Workers Roster</span>
+            </a>
+          </li>
+          <li class="sidebar-item">
             <a href="/admin/city-analytics" class="${activeRoute.includes('analytics') ? 'active' : ''}" onclick="event.preventDefault(); navigate('/admin/city-analytics');">
               🗺️ <span>City Analytics & Hotspots</span>
             </a>
@@ -42,11 +47,16 @@ async function renderAdminDashboard() {
         <div class="page-header">
           <div>
             <h1 class="page-title">${state.user.department_code || 'Municipal'} Operations Queue</h1>
-            <p class="page-subtitle">Triage, dispatch field engineers, and manage complaint lifecycle.</p>
+            <p class="page-subtitle">Triage complaints, monitor auto-assigned free workers, and manage lifecycle.</p>
           </div>
-          <button class="btn btn-outline" onclick="navigate('/admin/city-analytics')">
-            🗺️ View City Hotspots
-          </button>
+          <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            <button class="btn btn-secondary" onclick="navigate('/admin/workers')">
+              👷 Field Workers Roster (5)
+            </button>
+            <button class="btn btn-outline" onclick="navigate('/admin/city-analytics')">
+              🗺️ View City Hotspots
+            </button>
+          </div>
         </div>
 
         <div id="admin-stats-grid" class="cards-grid">
@@ -59,8 +69,8 @@ async function renderAdminDashboard() {
             <div class="table-filters">
               <select id="admin-status-filter" class="select-input" onchange="loadAdminComplaints()">
                 <option value="ALL">All Statuses</option>
-                <option value="PENDING">Pending</option>
                 <option value="ASSIGNED">Assigned</option>
+                <option value="PENDING">Pending</option>
                 <option value="ACKNOWLEDGED">Acknowledged</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="RESOLVED">Resolved</option>
@@ -83,7 +93,11 @@ async function renderAdminDashboard() {
 async function loadAdminComplaints() {
   const filter = document.getElementById("admin-status-filter") ? document.getElementById("admin-status-filter").value : "ALL";
   try {
-    const res = await apiFetch(`/api/admin/complaints?status_filter=${filter}`);
+    const [res, workersRes] = await Promise.all([
+      apiFetch(`/api/admin/complaints?status_filter=${filter}`),
+      apiFetch(`/api/admin/workers`).catch(() => null)
+    ]);
+
     const container = document.getElementById("admin-complaints-container");
     const statsEl = document.getElementById("admin-stats-grid");
     if (!container || !res || !res.success) return;
@@ -93,6 +107,10 @@ async function loadAdminComplaints() {
     const pending = complaints.filter(c => ["PENDING", "ASSIGNED", "ACKNOWLEDGED", "IN_PROGRESS"].includes(c.status)).length;
     const resolved = complaints.filter(c => ["RESOLVED", "CLOSED"].includes(c.status)).length;
 
+    const freeWorkers = workersRes && workersRes.success ? workersRes.free_workers : 0;
+    const totalWorkers = workersRes && workersRes.success ? workersRes.total_workers : 5;
+    const busyWorkers = workersRes && workersRes.success ? workersRes.busy_workers : 0;
+
     if (statsEl) {
       statsEl.innerHTML = `
         <div class="stat-card">
@@ -101,7 +119,7 @@ async function loadAdminComplaints() {
           <div class="stat-desc">${state.user.department_code || 'Assigned'} department</div>
         </div>
         <div class="stat-card">
-          <div class="stat-header">Active / Pending <span>⏳</span></div>
+          <div class="stat-header">Active / Ongoing <span>⏳</span></div>
           <div class="stat-value" style="color:var(--info);">${pending}</div>
           <div class="stat-desc">Requiring action or ongoing</div>
         </div>
@@ -109,6 +127,11 @@ async function loadAdminComplaints() {
           <div class="stat-header">Resolved & Closed <span>✅</span></div>
           <div class="stat-value" style="color:var(--success);">${resolved}</div>
           <div class="stat-desc">Completed municipal works</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer;" onclick="navigate('/admin/workers')" title="Click to view full roster">
+          <div class="stat-header">Field Workers <span>👷</span></div>
+          <div class="stat-value" style="color:var(--accent);">${freeWorkers} <span style="font-size:1rem; font-weight:500; color:var(--text-muted);">/ ${totalWorkers} Free</span></div>
+          <div class="stat-desc">🟢 ${freeWorkers} Available • 🔴 ${busyWorkers} Dispatched</div>
         </div>
       `;
     }
@@ -126,6 +149,7 @@ async function loadAdminComplaints() {
             <th>Citizen & Contact</th>
             <th>Title & Location</th>
             <th>Category</th>
+            <th>Assigned Field Worker</th>
             <th>Assigned Head</th>
             <th>Status</th>
             <th>Action</th>
@@ -144,6 +168,23 @@ async function loadAdminComplaints() {
                 <div style="font-size:0.75rem; color:var(--text-muted);">${c.location}</div>
               </td>
               <td><span class="badge" style="background:#EEF2FF; color:#4338CA;">${c.category}</span></td>
+              <td>
+                ${c.assigned_worker ? `
+                  <div style="display:flex; align-items:center; gap:0.35rem;">
+                    <span>👷</span>
+                    <strong style="font-size:0.85rem; color:var(--primary);">${c.assigned_worker.name}</strong>
+                  </div>
+                  <div style="font-size:0.72rem; color:var(--text-muted);">${c.assigned_worker.designation}</div>
+                  <div style="margin-top:0.2rem;">
+                    <span class="badge ${c.assigned_worker.worker_status ? 'badge-success' : 'badge-warning'}" style="font-size:0.68rem; padding:0.15rem 0.45rem;">
+                      ${c.assigned_worker.worker_status ? '🟢 Free' : '🔴 Busy'}
+                    </span>
+                    <span style="font-size:0.7rem; color:var(--text-light); margin-left:0.25rem;">${c.assigned_worker.worker_code}</span>
+                  </div>
+                ` : `
+                  <span class="badge" style="background:#F1F5F9; color:#64748B; font-size:0.72rem;">Unassigned</span>
+                `}
+              </td>
               <td>
                 ${c.assigned_department_head ? `<span style="font-size:0.8rem; font-weight:600; color:var(--accent);">${c.assigned_department_head}</span>` : `<span style="font-size:0.8rem; color:var(--text-light);">Unassigned</span>`}
               </td>
@@ -217,8 +258,11 @@ async function renderAdminComplaintDetail(complaintRef) {
               <button class="btn btn-secondary" onclick="openAdminStatusModal('${c.complaint_id}', '${c.status}')">
                 🔄 Update Status
               </button>
-              <button class="btn btn-primary" onclick="openAdminAssignModal('${c.complaint_id}', '${c.assigned_department_head || ''}')">
-                👷 Assign Department Head
+              <button class="btn btn-primary" onclick="openAdminAssignWorkerModal('${c.complaint_id}', ${c.assigned_worker ? c.assigned_worker.id : 'null'})">
+                👷 Assign / Reassign Worker
+              </button>
+              <button class="btn btn-outline" onclick="openAdminAssignModal('${c.complaint_id}', '${c.assigned_department_head || ''}')">
+                🏛️ Assign Department Head
               </button>
             </div>
 
@@ -249,6 +293,58 @@ async function renderAdminComplaintDetail(complaintRef) {
 
         <!-- Sidebar Metadata -->
         <div>
+          <!-- Field Worker Card -->
+          <div class="stat-card" style="padding:1.5rem; margin-bottom:1.5rem; border:1px solid ${c.assigned_worker ? 'var(--border)' : '#FCD34D'};">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+              <h3 style="font-size:1.05rem; color:var(--primary);">👷 Assigned Field Worker</h3>
+              ${c.assigned_worker ? `
+                <span class="badge ${c.assigned_worker.worker_status ? 'badge-success' : 'badge-warning'}" style="font-size:0.7rem;">
+                  ${c.assigned_worker.worker_status ? '🟢 Free (Available)' : '🔴 Busy (On Task)'}
+                </span>
+              ` : `
+                <span class="badge badge-warning" style="font-size:0.7rem;">Unassigned</span>
+              `}
+            </div>
+
+            ${c.assigned_worker ? `
+              <div style="margin-bottom:0.6rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Full Name:</span>
+                <strong style="font-size:0.95rem; color:var(--primary);">${c.assigned_worker.name}</strong>
+                <span style="font-size:0.75rem; color:var(--accent); margin-left:0.35rem;">(${c.assigned_worker.worker_code})</span>
+              </div>
+              <div style="margin-bottom:0.6rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Designation:</span>
+                <span style="font-size:0.85rem; font-weight:600;">${c.assigned_worker.designation}</span>
+              </div>
+              <div style="margin-bottom:0.6rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Direct Phone:</span>
+                <a href="tel:${c.assigned_worker.phone}" style="font-size:0.85rem; color:var(--accent); text-decoration:none; font-weight:600;">📞 ${c.assigned_worker.phone}</a>
+              </div>
+              ${c.assigned_worker.email ? `
+                <div style="margin-bottom:0.6rem;">
+                  <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Email:</span>
+                  <span style="font-size:0.8rem;">${c.assigned_worker.email}</span>
+                </div>
+              ` : ''}
+              ${c.assigned_worker.skills ? `
+                <div style="margin-bottom:0.75rem;">
+                  <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Skills:</span>
+                  <div style="font-size:0.75rem; color:var(--text-muted); line-height:1.4;">${c.assigned_worker.skills}</div>
+                </div>
+              ` : ''}
+              <button class="btn btn-outline btn-sm" style="width:100%; margin-top:0.25rem;" onclick="openAdminAssignWorkerModal('${c.complaint_id}', ${c.assigned_worker.id})">
+                🔄 Change Worker
+              </button>
+            ` : `
+              <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.85rem;">
+                No free worker was available at time of registration.
+              </p>
+              <button class="btn btn-primary btn-sm" style="width:100%;" onclick="openAdminAssignWorkerModal('${c.complaint_id}', null)">
+                👷 Assign Field Worker
+              </button>
+            `}
+          </div>
+
           <div class="stat-card" style="padding:1.5rem; margin-bottom:1.5rem;">
             <h3 style="font-size:1.05rem; color:var(--primary); margin-bottom:1rem;">Grievance Details</h3>
 
@@ -442,6 +538,262 @@ async function handleAdminAssignSubmit(event, complaintRef) {
     }
   } catch (err) {
     showToast(err.message || "Failed to assign department head.", "error");
+  }
+}
+
+// 4b. Field Worker Assignment Modal
+async function openAdminAssignWorkerModal(complaintRef, currentWorkerId) {
+  try {
+    const res = await apiFetch("/api/admin/workers");
+    if (!res || !res.success) {
+      showToast("Unable to fetch department workers.", "error");
+      return;
+    }
+    const workers = res.workers;
+
+    const modal = document.createElement("div");
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width:560px;">
+        <div class="modal-header">
+          <h3 class="modal-title">👷 Dispatch Field Worker</h3>
+          <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+        </div>
+        <form onsubmit="handleAdminWorkerAssignSubmit(event, '${complaintRef}')">
+          <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem;">
+            Select one of the 5 municipal workers from <strong>${state.user.department_code || 'your'}</strong> department. Free workers are ready for immediate dispatch.
+          </p>
+
+          <div style="display:flex; flex-direction:column; gap:0.75rem; max-height:360px; overflow-y:auto; padding-right:0.25rem; margin-bottom:1.25rem;">
+            ${workers.map(w => {
+              const isSelected = currentWorkerId === w.id;
+              return `
+                <label style="display:flex; align-items:flex-start; gap:0.85rem; padding:0.9rem; border:1.5px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius:var(--radius-md); background:${isSelected ? '#EFF6FF' : 'var(--bg-surface)'}; cursor:pointer; transition:var(--transition);">
+                  <input type="radio" name="selected_worker_id" value="${w.id}" ${isSelected ? 'checked' : ''} style="margin-top:0.3rem;" required />
+                  <div style="flex:1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.2rem;">
+                      <strong style="color:var(--primary); font-size:0.92rem;">${w.name}</strong>
+                      <span class="badge ${w.worker_status ? 'badge-success' : 'badge-warning'}" style="font-size:0.7rem; padding:0.15rem 0.5rem;">
+                        ${w.worker_status ? '🟢 Free (Available)' : '🔴 Busy (On Task)'}
+                      </span>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--text-muted);">
+                      ${w.designation} • <span style="font-family:monospace; color:var(--accent); font-weight:600;">${w.worker_code}</span>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-light); margin-top:0.25rem; display:flex; justify-content:space-between;">
+                      <span>📞 ${w.phone}</span>
+                      <span>Active Tasks: <strong>${w.active_complaints_count}</strong></span>
+                    </div>
+                  </div>
+                </label>
+              `;
+            }).join('')}
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+            <button type="button" class="btn btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Confirm Worker Assignment</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  } catch (err) {
+    showToast(err.message || "Failed to load workers.", "error");
+  }
+}
+
+async function handleAdminWorkerAssignSubmit(event, complaintRef) {
+  event.preventDefault();
+  const selectedRadio = document.querySelector('input[name="selected_worker_id"]:checked');
+  if (!selectedRadio) {
+    showToast("Please select a worker.", "warning");
+    return;
+  }
+  const worker_id = selectedRadio.value;
+
+  const formData = new FormData();
+  formData.append("worker_id", worker_id);
+
+  try {
+    const res = await apiFetch(`/api/admin/complaints/${complaintRef}/assign`, {
+      method: "POST",
+      body: formData
+    });
+    if (res && res.success) {
+      document.querySelector(".modal-overlay").remove();
+      showToast(res.message, "success");
+      renderAdminComplaintDetail(complaintRef);
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to assign worker.", "error");
+  }
+}
+
+// 4c. Section: Department Field Workers Roster Page
+async function renderAdminWorkersRoster() {
+  const root = document.getElementById("app-root");
+  root.innerHTML = `
+    <div class="app-layout">
+      ${renderAdminSidebar('/admin/workers')}
+      <div class="main-content">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">${state.user.department_code || 'Department'} Field Workers Roster</h1>
+            <p class="page-subtitle">Real-time status of 5 designated municipal workers with automatic dispatch and status controls.</p>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="navigate('/admin/dashboard')">
+            ← Back to Queue
+          </button>
+        </div>
+
+        <div id="workers-stats-grid" class="cards-grid">
+          <div class="stat-card"><div class="stat-desc">Loading workers stats...</div></div>
+        </div>
+
+        <div class="table-card">
+          <div class="table-toolbar">
+            <div>
+              <span style="font-weight:700; color:var(--primary); font-size:1.05rem;">Department Personnel Directory</span>
+              <span style="font-size:0.8rem; color:var(--text-muted); margin-left:0.5rem;">(5 Workers Configured)</span>
+            </div>
+            <div style="font-size:0.85rem; color:var(--text-muted);">
+              ⚡ Auto-Assignment Dispatches Free Workers (<code>worker_status: true</code>)
+            </div>
+          </div>
+
+          <div id="admin-workers-table-container" class="table-responsive">
+            <div style="padding:2.5rem; text-align:center; color:var(--text-muted);">Loading workers roster...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  loadAdminWorkersRoster();
+}
+
+async function loadAdminWorkersRoster() {
+  try {
+    const res = await apiFetch("/api/admin/workers");
+    const container = document.getElementById("admin-workers-table-container");
+    const statsEl = document.getElementById("workers-stats-grid");
+    if (!container || !res || !res.success) return;
+
+    const workers = res.workers;
+    const freeCount = res.free_workers;
+    const busyCount = res.busy_workers;
+    const total = res.total_workers;
+
+    if (statsEl) {
+      statsEl.innerHTML = `
+        <div class="stat-card">
+          <div class="stat-header">Total Department Workers <span>👥</span></div>
+          <div class="stat-value">${total}</div>
+          <div class="stat-desc">${state.user.department_code || 'Assigned'} municipal cadre</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">Available / Free <span>🟢</span></div>
+          <div class="stat-value" style="color:var(--success);">${freeCount}</div>
+          <div class="stat-desc">Ready for automatic grievance dispatch</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">Occupied / Busy <span>🔴</span></div>
+          <div class="stat-value" style="color:var(--warning);">${busyCount}</div>
+          <div class="stat-desc">Currently assigned or on active duty</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">Auto-Dispatch Engine <span>⚡</span></div>
+          <div class="stat-value" style="color:var(--accent); font-size:1.25rem;">ONLINE</div>
+          <div class="stat-desc">Routes new grievances to free workers</div>
+        </div>
+      `;
+    }
+
+    if (workers.length === 0) {
+      container.innerHTML = `<div style="padding:3rem; text-align:center; color:var(--text-muted);">No workers found for this department.</div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Worker Code</th>
+            <th>Name & Designation</th>
+            <th>Contact Details</th>
+            <th>Specialization Skills</th>
+            <th>Worker Status</th>
+            <th>Active Complaints</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${workers.map(w => `
+            <tr>
+              <td>
+                <strong style="font-family:monospace; color:var(--primary); font-size:0.85rem;">${w.worker_code}</strong>
+              </td>
+              <td>
+                <div style="font-weight:700; color:var(--primary);">${w.name}</div>
+                <div style="font-size:0.78rem; color:var(--text-muted);">${w.designation}</div>
+              </td>
+              <td>
+                <div><a href="tel:${w.phone}" style="color:var(--accent); text-decoration:none; font-weight:600; font-size:0.82rem;">📞 ${w.phone}</a></div>
+                <div style="font-size:0.75rem; color:var(--text-light);">${w.email || '--'}</div>
+              </td>
+              <td>
+                <div style="font-size:0.78rem; color:var(--text-muted); max-width:220px; line-height:1.4;">
+                  ${w.skills || 'General department works'}
+                </div>
+              </td>
+              <td>
+                <span class="badge ${w.worker_status ? 'badge-success' : 'badge-warning'}" style="font-size:0.8rem; padding:0.3rem 0.65rem;">
+                  ${w.worker_status ? '🟢 Free (Available)' : '🔴 Busy (On Task)'}
+                </span>
+                <div style="font-size:0.68rem; color:var(--text-light); margin-top:0.25rem; font-family:monospace;">
+                  worker_status: ${w.worker_status ? 'true' : 'false'}
+                </div>
+              </td>
+              <td>
+                ${w.active_complaints.length > 0 ? `
+                  <div style="display:flex; flex-direction:column; gap:0.25rem;">
+                    ${w.active_complaints.map(ac => `
+                      <a href="#" style="font-size:0.78rem; color:var(--accent); text-decoration:none; font-weight:600;" onclick="event.preventDefault(); navigate('/admin/complaints/${ac.complaint_id}');">
+                        📌 ${ac.complaint_id} <span class="badge badge-${ac.status}" style="font-size:0.65rem; padding:0.1rem 0.35rem;">${ac.status}</span>
+                      </a>
+                    `).join('')}
+                  </div>
+                ` : `
+                  <span style="font-size:0.78rem; color:var(--text-light);">No active tasks</span>
+                `}
+              </td>
+              <td>
+                <button class="btn btn-outline btn-sm" onclick="handleToggleWorkerStatus(${w.id}, '${w.name}', ${w.worker_status})">
+                  ${w.worker_status ? 'Set as Busy' : 'Set as Free'}
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    showToast(err.message || "Failed to load workers roster.", "error");
+  }
+}
+
+async function handleToggleWorkerStatus(workerId, workerName, currentStatus) {
+  try {
+    const res = await apiFetch(`/api/admin/workers/${workerId}/toggle-status`, {
+      method: "POST"
+    });
+    if (res && res.success) {
+      showToast(res.message, "success");
+      loadAdminWorkersRoster();
+    }
+  } catch (err) {
+    showToast(err.message || "Failed to toggle worker status.", "error");
   }
 }
 

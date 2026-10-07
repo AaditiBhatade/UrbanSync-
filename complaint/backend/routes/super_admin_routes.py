@@ -8,7 +8,7 @@ from typing import Optional, List
 from backend.models.database import get_db
 from backend.models.models import (
     Complaint, Department, User, UserRole, ComplaintStatus, 
-    AuditLog, ComplaintStatusHistory
+    AuditLog, ComplaintStatusHistory, Worker
 )
 from backend.middleware.auth_middleware import (
     get_current_user, require_role, log_audit_action, create_notification
@@ -187,14 +187,38 @@ def override_ai_prediction(
     complaint.assigned_at = datetime.datetime.utcnow()
     complaint.updated_at = datetime.datetime.utcnow()
 
+    # Reassign to free worker of new department
+    if complaint.assigned_worker and complaint.assigned_worker.department_id != target_dept.id:
+        complaint.assigned_worker.worker_status = True  # Free old worker
+        complaint.assigned_worker_id = None
+
+    if not complaint.assigned_worker_id:
+        free_worker = (
+            db.query(Worker)
+            .filter(
+                Worker.department_id == target_dept.id,
+                Worker.worker_status == True,
+                Worker.is_active == True
+            )
+            .order_by(Worker.id.asc())
+            .first()
+        )
+        if free_worker:
+            complaint.assigned_worker_id = free_worker.id
+            free_worker.worker_status = False  # Mark busy
+
     # Add history
+    comment_text = f"Super Admin override: Categorized as '{payload.category}', assigned to {target_dept.name}. Reason: {payload.reason}"
+    if complaint.assigned_worker:
+        comment_text += f". Field worker: {complaint.assigned_worker.name} ({complaint.assigned_worker.worker_code})."
+
     hist = ComplaintStatusHistory(
         complaint_id=complaint.id,
         status=ComplaintStatus.ASSIGNED.value,
         old_status=old_status,
         actor_id=current_user.id,
         actor_role=current_user.role,
-        comment=f"Super Admin override: Categorized as '{payload.category}', assigned to {target_dept.name}. Reason: {payload.reason}"
+        comment=comment_text
     )
     db.add(hist)
     db.commit()

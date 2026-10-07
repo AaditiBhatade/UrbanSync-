@@ -1,5 +1,6 @@
 import json
 import os
+import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from sqlalchemy import desc, func
 from backend.models.database import get_db
 from backend.models.models import (
     Complaint, Department, User, UserRole, ComplaintStatus, 
-    ComplaintStatusHistory, AuditLog
+    ComplaintStatusHistory, AuditLog, Worker
 )
 from backend.middleware.auth_middleware import get_current_user, require_role, log_audit_action, create_notification
 from backend.services.clustering_service import clustering_service
@@ -83,6 +84,16 @@ def get_department_complaints(
             "cluster_id": c.cluster_id,
             "cluster_name": c_name,
             "assigned_department_head": c.assigned_department_head,
+            "assigned_worker": {
+                "id": c.assigned_worker.id,
+                "worker_code": c.assigned_worker.worker_code,
+                "name": c.assigned_worker.name,
+                "phone": c.assigned_worker.phone,
+                "designation": c.assigned_worker.designation,
+                "worker_status": c.assigned_worker.worker_status
+            } if c.assigned_worker else None,
+            "assigned_worker_name": c.assigned_worker.name if c.assigned_worker else None,
+            "assigned_worker_code": c.assigned_worker.worker_code if c.assigned_worker else None,
             "is_duplicate": c.is_duplicate,
             "duplicate_of_id": c.duplicate_of_id,
             "image": c.images,
@@ -155,6 +166,18 @@ def get_admin_complaint_detail(
             "image": complaint.images,
             "images": [complaint.images] if complaint.images else [],
             "assigned_department_head": complaint.assigned_department_head,
+            "assigned_worker": {
+                "id": complaint.assigned_worker.id,
+                "worker_code": complaint.assigned_worker.worker_code,
+                "name": complaint.assigned_worker.name,
+                "email": complaint.assigned_worker.email,
+                "phone": complaint.assigned_worker.phone,
+                "designation": complaint.assigned_worker.designation,
+                "worker_status": complaint.assigned_worker.worker_status,
+                "skills": complaint.assigned_worker.skills
+            } if complaint.assigned_worker else None,
+            "assigned_worker_name": complaint.assigned_worker.name if complaint.assigned_worker else None,
+            "assigned_worker_code": complaint.assigned_worker.worker_code if complaint.assigned_worker else None,
             "resolution_description": complaint.resolution_description,
             "rejection_reason": complaint.rejection_reason,
             "is_duplicate": complaint.is_duplicate,
@@ -280,13 +303,51 @@ async def manual_assign_complaint(
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
+    dept_head = form_data.get("department_head")
+    dept_id = form_data.get("department_id")
+    worker_id = form_data.get("worker_id")
+
+    complaint = (
+        db.query(Complaint)
+        .filter(Complaint.complaint_id == complaint_ref)
+        .first()
+    )
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    # Enforce department isolation
+    if current_user.role == UserRole.DEPARTMENT_ADMIN.value:
+        admin_dept = db.query(Department).filter(Department.code == current_user.department_code).first()
+        if not admin_dept or complaint.department_id != admin_dept.id:
+            raise HTTPException(status_code=403, detail="Access denied: Complaint belongs to a different department.")
+
+    audit_items = []
+    comment_items = []
     if dept_head:
         complaint.assigned_department_head = str(dept_head).strip()
+        audit_items.append(f"Dept Head: {complaint.assigned_department_head}")
+        comment_items.append(f"Assigned department head: {complaint.assigned_department_head}")
+
+    if worker_id:
+        try:
+            target_worker = db.query(Worker).filter(Worker.id == int(worker_id)).first()
+            if target_worker:
+                # Free previous worker if changing
+                if complaint.assigned_worker and complaint.assigned_worker.id != target_worker.id:
+                    complaint.assigned_worker.worker_status = True
+                complaint.assigned_worker_id = target_worker.id
+                target_worker.worker_status = False # New worker becomes occupied
+                audit_items.append(f"Worker: {target_worker.name} ({target_worker.worker_code})")
+                comment_items.append(f"Assigned field worker: {target_worker.name} ({target_worker.worker_code})")
+        except ValueError:
+            pass
+
     if dept_id:
         try:
             # Super admin can transfer complaint across departments; dept admin assigns department head
             if current_user.role == UserRole.SUPER_ADMIN.value:
                 complaint.department_id = int(dept_id)
+                audit_items.append(f"Department ID: {complaint.department_id}")
         except ValueError:
             pass
 
@@ -299,7 +360,7 @@ async def manual_assign_complaint(
         old_status=complaint.status,
         actor_id=current_user.id,
         actor_role=current_user.role,
-        comment=f"Assigned department head: {complaint.assigned_department_head}"
+        comment="; ".join(comment_items) if comment_items else "Manual assignment updated"
     )
     db.add(history)
 
@@ -309,7 +370,7 @@ async def manual_assign_complaint(
         action="MANUAL_ASSIGNMENT",
         entity_type="COMPLAINT",
         entity_id=complaint.complaint_id,
-        new_value=f"Dept Head: {complaint.assigned_department_head}"
+        new_value="; ".join(audit_items) if audit_items else "Manual assignment updated"
     )
 
     db.commit()
@@ -317,10 +378,146 @@ async def manual_assign_complaint(
 
     return {
         "success": True,
-        "message": f"Successfully assigned to {complaint.assigned_department_head}",
+        "message": f"Successfully updated assignment for {complaint.complaint_id}",
         "assigned_department_head": complaint.assigned_department_head,
+        "assigned_worker": {
+            "id": complaint.assigned_worker.id,
+            "worker_code": complaint.assigned_worker.worker_code,
+            "name": complaint.assigned_worker.name,
+            "designation": complaint.assigned_worker.designation,
+            "phone": complaint.assigned_worker.phone,
+            "worker_status": complaint.assigned_worker.worker_status
+        } if complaint.assigned_worker else None,
         "department_id": complaint.department_id
     }
+
+@router.get("/workers")
+def get_department_workers(
+    department_code: Optional[str] = None,
+    current_user: User = Depends(require_role([UserRole.DEPARTMENT_ADMIN.value, UserRole.SUPER_ADMIN.value])),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns list of 5 dummy workers for the department admin's department.
+    Includes their worker_status (True/False) and currently active assigned complaints.
+    """
+    target_dept_code = current_user.department_code
+    if current_user.role == UserRole.SUPER_ADMIN.value and department_code:
+        target_dept_code = department_code
+
+    query = db.query(Worker)
+    if target_dept_code:
+        query = query.filter(Worker.department_code == target_dept_code)
+    
+    workers = query.order_by(Worker.id.asc()).all()
+
+    worker_list = []
+    free_count = 0
+    busy_count = 0
+
+    for w in workers:
+        if w.worker_status:
+            free_count += 1
+        else:
+            busy_count += 1
+
+        active_complaints = (
+            db.query(Complaint)
+            .filter(
+                Complaint.assigned_worker_id == w.id,
+                Complaint.status.in_([
+                    ComplaintStatus.PENDING.value,
+                    ComplaintStatus.SUBMITTED.value,
+                    ComplaintStatus.ASSIGNED.value,
+                    ComplaintStatus.ACKNOWLEDGED.value,
+                    ComplaintStatus.IN_PROGRESS.value
+                ])
+            )
+            .order_by(desc(Complaint.created_at))
+            .all()
+        )
+
+        active_comp_data = [
+            {
+                "complaint_id": c.complaint_id,
+                "title": c.title,
+                "status": c.status,
+                "priority": c.priority,
+                "created_at": c.created_at.isoformat() if c.created_at else None
+            }
+            for c in active_complaints
+        ]
+
+        worker_list.append({
+            "id": w.id,
+            "worker_code": w.worker_code,
+            "name": w.name,
+            "designation": w.designation,
+            "phone": w.phone,
+            "email": w.email,
+            "department_code": w.department_code,
+            "department_name": w.department.name if w.department else w.department_code,
+            "worker_status": w.worker_status,  # True = Free/Available, False = Busy/Assigned
+            "status_label": "Free (Available)" if w.worker_status else "Busy (On Task)",
+            "skills": w.skills,
+            "active_complaints_count": len(active_complaints),
+            "active_complaints": active_comp_data
+        })
+
+    return {
+        "success": True,
+        "department_code": target_dept_code,
+        "total_workers": len(worker_list),
+        "free_workers": free_count,
+        "busy_workers": busy_count,
+        "workers": worker_list
+    }
+
+@router.post("/workers/{worker_id}/toggle-status")
+def toggle_worker_status(
+    worker_id: int,
+    current_user: User = Depends(require_role([UserRole.DEPARTMENT_ADMIN.value, UserRole.SUPER_ADMIN.value])),
+    db: Session = Depends(get_db)
+):
+    """
+    Allows Department Admin to toggle a field worker's status (Free <-> Busy).
+    Strict department isolation enforced.
+    """
+    worker = db.query(Worker).filter(Worker.id == worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    if current_user.role == UserRole.DEPARTMENT_ADMIN.value:
+        if worker.department_code != current_user.department_code:
+            raise HTTPException(status_code=403, detail="Access denied: Worker belongs to another department.")
+
+    # Toggle status
+    old_status = worker.worker_status
+    worker.worker_status = not worker.worker_status
+    worker.updated_at = datetime.datetime.utcnow()
+
+    log_audit_action(
+        db=db,
+        actor=current_user,
+        action="TOGGLE_WORKER_STATUS",
+        entity_type="WORKER",
+        entity_id=worker.worker_code,
+        old_value="Free" if old_status else "Busy",
+        new_value="Free" if worker.worker_status else "Busy"
+    )
+    db.commit()
+    db.refresh(worker)
+
+    return {
+        "success": True,
+        "message": f"Worker {worker.name} status updated to {'Free (Available)' if worker.worker_status else 'Busy (On Task)'}",
+        "worker_id": worker.id,
+        "worker_code": worker.worker_code,
+        "name": worker.name,
+        "worker_status": worker.worker_status,
+        "status_label": "Free (Available)" if worker.worker_status else "Busy (On Task)"
+    }
+
 
 @router.get("/city-analytics")
 @router.get("/ml-analytics")

@@ -102,6 +102,7 @@ async function navigate(path, addToHistory = true) {
   } else if (path.startsWith("/admin/")) {
     if (!requireAuth(["DEPARTMENT_ADMIN", "SUPER_ADMIN"])) return;
     if (path === "/admin/dashboard") renderAdminDashboard();
+    else if (path === "/admin/workers") renderAdminWorkersRoster();
     else if (path.includes("analytics") || path.includes("hotspots")) renderAdminMlAnalytics();
     else if (path.startsWith("/admin/complaints/")) {
       const id = path.split("/")[3];
@@ -115,6 +116,13 @@ async function navigate(path, addToHistory = true) {
     else if (path === "/super-admin/users") renderSuperAdminUsers();
     else if (path === "/super-admin/departments") renderSuperAdminDepartments();
     else if (path === "/super-admin/audit-logs") renderSuperAdminAuditLogs();
+  } else if (path.startsWith("/worker/")) {
+    if (!requireAuth(["FIELD_WORKER", "SUPER_ADMIN"])) return;
+    if (path === "/worker/dashboard") renderWorkerDashboard();
+    else if (path.startsWith("/worker/complaints/")) {
+      const id = path.split("/")[3];
+      renderWorkerComplaintDetail(id);
+    }
   } else {
     // 404 fallback
     const root = document.getElementById("app-root");
@@ -151,6 +159,8 @@ function redirectUserByRole() {
     navigate("/super-admin/dashboard");
   } else if (state.user.role === "DEPARTMENT_ADMIN") {
     navigate("/admin/dashboard");
+  } else if (state.user.role === "FIELD_WORKER") {
+    navigate("/worker/dashboard");
   } else {
     navigate("/citizen/dashboard");
   }
@@ -169,12 +179,16 @@ function updateNavbar() {
     } else if (state.user.role === "DEPARTMENT_ADMIN") {
       dashboardLink = "/admin/dashboard";
       roleBadge = `${state.user.department_code} Admin`;
+    } else if (state.user.role === "FIELD_WORKER") {
+      dashboardLink = "/worker/dashboard";
+      roleBadge = `👷 ${state.user.department_code || ''} Worker`;
     }
 
     navRight.innerHTML = `
       <a href="${dashboardLink}" class="nav-link" onclick="event.preventDefault(); navigate('${dashboardLink}');">Dashboard</a>
       ${state.user.role === "CITIZEN" ? `<a href="/citizen/report" class="nav-link" onclick="event.preventDefault(); navigate('/citizen/report');">Report Issue</a>` : ''}
-      ${state.user.role !== "CITIZEN" ? `<a href="/admin/city-analytics" class="nav-link" onclick="event.preventDefault(); navigate('/admin/city-analytics');">City Hotspots</a>` : ''}
+      ${state.user.role === "FIELD_WORKER" ? `<a href="/worker/dashboard" class="nav-link" onclick="event.preventDefault(); navigate('/worker/dashboard');">My Assigned Tasks</a>` : ''}
+      ${state.user.role !== "CITIZEN" && state.user.role !== "FIELD_WORKER" ? `<a href="/admin/city-analytics" class="nav-link" onclick="event.preventDefault(); navigate('/admin/city-analytics');">City Hotspots</a>` : ''}
       <div style="display:flex; align-items:center; gap:0.5rem; margin-left:0.5rem; background:rgba(255,255,255,0.08); padding:0.25rem 0.75rem; border-radius:20px;">
         <span style="font-size:0.8rem; color:#E2E8F0;">${state.user.full_name.split(' ')[0]}</span>
         <span class="badge" style="font-size:0.65rem; background:#38BDF8; color:#0F172A; padding:0.15rem 0.4rem;">${roleBadge}</span>

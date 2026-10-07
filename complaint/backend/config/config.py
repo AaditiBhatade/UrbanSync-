@@ -17,7 +17,13 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")) # 24 hours
 
 # Database
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/urbansync.db")
+raw_db_url = os.getenv("DATABASE_URL", "")
+if not raw_db_url or raw_db_url == "sqlite:///./urbansync.db":
+    DATABASE_URL = f"sqlite:///{BASE_DIR.as_posix()}/urbansync.db"
+elif raw_db_url.startswith("sqlite:///./"):
+    DATABASE_URL = f"sqlite:///{BASE_DIR.as_posix()}/{raw_db_url[12:]}"
+else:
+    DATABASE_URL = raw_db_url
 
 # Google OAuth (configured or gracefully handled if keys not provided)
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")

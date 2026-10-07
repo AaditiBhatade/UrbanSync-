@@ -541,6 +541,15 @@ async function renderCitizenComplaintDetail(complaintRef) {
               </div>
             ` : ''}
 
+            ${c.assigned_worker ? `
+              <div style="margin-bottom:0.85rem; background:#F8FAFC; border:1px solid var(--border); border-radius:var(--radius-sm); padding:0.75rem;">
+                <span style="font-size:0.75rem; color:var(--text-muted); display:block; margin-bottom:0.25rem;">Dispatched Field Worker:</span>
+                <strong style="font-size:0.85rem; color:var(--primary);">👷 ${c.assigned_worker.name}</strong>
+                <div style="font-size:0.75rem; color:var(--text-muted);">${c.assigned_worker.designation} (${c.assigned_worker.worker_code})</div>
+                <div style="font-size:0.75rem; color:var(--accent); margin-top:0.25rem;">📞 ${c.assigned_worker.phone}</div>
+              </div>
+            ` : ''}
+
             <div style="margin-bottom:0.85rem;">
               <span style="font-size:0.75rem; color:var(--text-muted); display:block;">Geographic Location:</span>
               <span style="font-size:0.85rem;">${c.location}</span>

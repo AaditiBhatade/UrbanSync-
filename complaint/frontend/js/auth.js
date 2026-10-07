@@ -77,28 +77,6 @@ function renderLandingPage() {
           </p>
         </div>
       </div>
-
-      <!-- Quick Demo Access Bar -->
-      <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:2rem; text-align:center; box-shadow:var(--shadow-sm); margin-bottom:3rem;">
-        <h3 style="color:var(--primary); margin-bottom:0.5rem;">Explore Pre-Configured Test Roles</h3>
-        <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1.5rem;">
-          One-click access to test Citizen reporting, Department Admin isolation, or City Super Admin dashboards.
-        </p>
-        <div style="display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;">
-          <button class="btn btn-outline" onclick="quickLogin('rahul.sharma@example.com', 'Password@123')">
-            👤 Login as Citizen (Rahul)
-          </button>
-          <button class="btn btn-outline" onclick="quickLogin('admin.water@urbansync.city', 'Password@123')">
-            💧 Login as Water Admin
-          </button>
-          <button class="btn btn-outline" onclick="quickLogin('admin.roads@urbansync.city', 'Password@123')">
-            🛣️ Login as Roads Admin
-          </button>
-          <button class="btn btn-primary" onclick="quickLogin('superadmin@urbansync.city', 'Password@123')">
-            👑 Login as Super Admin
-          </button>
-        </div>
-      </div>
     </div>
   `;
 }
@@ -158,17 +136,6 @@ function renderLoginPage() {
           </button>
         </form>
 
-        <!-- Quick Demo Credentials Box -->
-        <div class="demo-creds-box">
-          <div style="font-weight:700; color:var(--primary); margin-bottom:0.25rem;">🚀 Quick Test Accounts:</div>
-          <div class="demo-buttons-row">
-            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('rahul.sharma@example.com', 'Password@123')">Citizen</button>
-            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('admin.water@urbansync.city', 'Password@123')">Water Admin</button>
-            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('admin.roads@urbansync.city', 'Password@123')">Roads Admin</button>
-            <button class="btn btn-outline btn-sm" onclick="quickFillLogin('superadmin@urbansync.city', 'Password@123')">Super Admin</button>
-          </div>
-        </div>
-
         <div style="text-align:center; margin-top:1.5rem; font-size:0.875rem; color:var(--text-muted);">
           Don't have an account? 
           <a href="/register" onclick="event.preventDefault(); navigate('/register');" style="font-weight:600;">Create Account</a>
@@ -186,32 +153,6 @@ if (typeof setAuth === "undefined") {
     localStorage.setItem("urbansync_user", JSON.stringify(user));
     updateNavbar();
   };
-}
-
-async function quickFillLogin(email, pw) {
-  const emailEl = document.getElementById("login-email");
-  const pwEl = document.getElementById("login-password");
-  if (emailEl) emailEl.value = email;
-  if (pwEl) pwEl.value = pw;
-  await quickLogin(email, pw);
-}
-
-async function quickLogin(email, pw) {
-  try {
-    const res = await apiFetch("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password: pw, remember_me: true })
-    });
-    if (res && res.success) {
-      setAuth(res.access_token, res.user);
-      showToast(`Welcome, ${res.user.full_name}!`, "success");
-      if (res.user.role === "SUPER_ADMIN") navigate("/super-admin/dashboard");
-      else if (res.user.role === "DEPARTMENT_ADMIN") navigate("/admin/dashboard");
-      else navigate("/citizen/dashboard");
-    }
-  } catch (err) {
-    showToast(err.message || "Login failed", "error");
-  }
 }
 
 async function handleLoginSubmit(event) {
@@ -235,6 +176,7 @@ async function handleLoginSubmit(event) {
       showToast("Signed in successfully!", "success");
       if (res.user.role === "SUPER_ADMIN") navigate("/super-admin/dashboard");
       else if (res.user.role === "DEPARTMENT_ADMIN") navigate("/admin/dashboard");
+      else if (res.user.role === "FIELD_WORKER") navigate("/worker/dashboard");
       else navigate("/citizen/dashboard");
     }
   } catch (err) {

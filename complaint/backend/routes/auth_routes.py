@@ -2,11 +2,12 @@ import re
 import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 from backend.models.database import get_db
-from backend.models.models import User, UserRole, PasswordResetToken
+from backend.models.models import User, UserRole, PasswordResetToken, Worker
 from backend.utils.auth import (
     verify_password, get_password_hash, create_access_token, generate_random_token
 )
@@ -29,7 +30,7 @@ class RegisterRequest(BaseModel):
     terms_accepted: bool = Field(..., description="Must accept terms and conditions")
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(..., description="Email address or Worker Code (e.g. WRK-WAT-001)")
     password: str
     remember_me: Optional[bool] = False
 
@@ -135,9 +136,20 @@ def register_citizen(payload: RegisterRequest, request: Request, response: Respo
 
 @router.post("/login")
 def login_user(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.email == payload.email.lower()).first()
+    login_id = payload.email.strip().lower()
+    user = db.query(User).filter(func.lower(User.email) == login_id).first()
+    
+    # If not found by email, check if identifier is a Worker Code (e.g. WRK-WAT-001)
+    if not user:
+        worker_rec = db.query(Worker).filter(func.lower(Worker.worker_code) == login_id).first()
+        if worker_rec:
+            if worker_rec.user_id:
+                user = db.query(User).filter(User.id == worker_rec.user_id).first()
+            elif worker_rec.email:
+                user = db.query(User).filter(func.lower(User.email) == worker_rec.email.lower()).first()
+
     if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
+        raise HTTPException(status_code=401, detail="Invalid email/worker code or password.")
 
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Your account has been deactivated. Please contact support.")
@@ -163,22 +175,41 @@ def login_user(payload: LoginRequest, request: Request, response: Response, db: 
         ip_address=request.client.host if request.client else None
     )
 
+    user_data = {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "mobile": user.mobile,
+        "role": user.role,
+        "department_code": user.department_code,
+        "city": user.city,
+        "address": user.address,
+        "pincode": user.pincode,
+        "profile_photo": user.profile_photo
+    }
+
+    # If user is a FIELD_WORKER, attach their worker details
+    if user.role == UserRole.FIELD_WORKER.value:
+        worker = db.query(Worker).filter((Worker.user_id == user.id) | (Worker.email == user.email)).first()
+        if worker:
+            user_data["worker"] = {
+                "id": worker.id,
+                "worker_code": worker.worker_code,
+                "name": worker.name,
+                "designation": worker.designation,
+                "phone": worker.phone,
+                "email": worker.email,
+                "department_code": worker.department_code,
+                "department_name": worker.department.name if worker.department else worker.department_code,
+                "worker_status": worker.worker_status,
+                "skills": worker.skills
+            }
+
     return {
         "success": True,
         "access_token": token,
         "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "mobile": user.mobile,
-            "role": user.role,
-            "department_code": user.department_code,
-            "city": user.city,
-            "address": user.address,
-            "pincode": user.pincode,
-            "profile_photo": user.profile_photo
-        }
+        "user": user_data
     }
 
 @router.post("/google")
@@ -326,8 +357,8 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     }
 
 @router.get("/me")
-def get_current_user_profile(current_user: User = Depends(get_current_user)):
-    return {
+def get_current_user_profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    profile = {
         "id": current_user.id,
         "email": current_user.email,
         "full_name": current_user.full_name,
@@ -340,6 +371,22 @@ def get_current_user_profile(current_user: User = Depends(get_current_user)):
         "profile_photo": current_user.profile_photo,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None
     }
+    if current_user.role == UserRole.FIELD_WORKER.value:
+        worker = db.query(Worker).filter((Worker.user_id == current_user.id) | (Worker.email == current_user.email)).first()
+        if worker:
+            profile["worker"] = {
+                "id": worker.id,
+                "worker_code": worker.worker_code,
+                "name": worker.name,
+                "designation": worker.designation,
+                "phone": worker.phone,
+                "email": worker.email,
+                "department_code": worker.department_code,
+                "department_name": worker.department.name if worker.department else worker.department_code,
+                "worker_status": worker.worker_status,
+                "skills": worker.skills
+            }
+    return profile
 
 @router.put("/me")
 def update_profile(

@@ -9,6 +9,7 @@ from backend.routes.complaint_routes import router as complaint_router
 from backend.routes.admin_routes import router as admin_router
 from backend.routes.super_admin_routes import router as super_admin_router
 from backend.routes.notification_routes import router as notification_router
+from backend.routes.worker_routes import router as worker_router
 
 # Directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +17,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 UPLOADS_DIR = os.path.join(PROJECT_ROOT, "uploads")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+from backend.models.database import init_db_schema
+init_db_schema()
 
 app = FastAPI(
     title="UrbanSync Civic Complaints Platform",
@@ -32,12 +36,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # Include Routers
 app.include_router(auth_router)
 app.include_router(complaint_router)
 app.include_router(admin_router)
 app.include_router(super_admin_router)
 app.include_router(notification_router)
+app.include_router(worker_router)
 
 # Mount Static Assets
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")

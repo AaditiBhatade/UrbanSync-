@@ -9,7 +9,7 @@ from sqlalchemy import desc
 from backend.models.database import get_db
 from backend.models.models import (
     Complaint, Department, User, UserRole, ComplaintStatus, 
-    ComplaintStatusHistory, Notification, AuditLog
+    ComplaintStatusHistory, Notification, AuditLog, Worker
 )
 from backend.middleware.auth_middleware import get_current_user, log_audit_action, create_notification
 from backend.services.classification_service import classification_service
@@ -42,8 +42,9 @@ async def create_complaint(
     Citizen submits a civic complaint.
     1. ML Component 1: Text classification (TF-IDF + Logistic Regression) -> Predicted Category
     2. ML Component 2: Coordinate clustering (K-Means) -> Hotspot Cluster ID
-    3. Image: Stored in uploads/, associated with complaint record
-    4. Duplicate detection via TF-IDF cosine similarity + Haversine distance
+    3. Automatic Worker Assignment: Assigns the first available free worker (worker_status=True) of the routed department
+    4. Image: Stored in uploads/, associated with complaint record
+    5. Duplicate detection via TF-IDF cosine similarity + Haversine distance
     """
     if current_user.role not in [UserRole.CITIZEN.value, UserRole.SUPER_ADMIN.value]:
         # Citizens submit complaints
@@ -83,6 +84,25 @@ async def create_complaint(
     dept = db.query(Department).filter(Department.code == dept_code).first()
     department_id = dept.id if dept else None
 
+    # AUTOMATIC WORKER ASSIGNMENT TO FREE WORKER OF THE DEPARTMENT
+    assigned_worker = None
+    if department_id:
+        free_worker = (
+            db.query(Worker)
+            .filter(
+                Worker.department_id == department_id,
+                Worker.worker_status == True,
+                Worker.is_active == True
+            )
+            .order_by(Worker.id.asc())
+            .first()
+        )
+        if free_worker:
+            assigned_worker = free_worker
+            # Worker is now assigned to this grievance (marked busy)
+            free_worker.worker_status = False
+            free_worker.updated_at = datetime.datetime.utcnow()
+
     # ML COMPONENT 2: HOTSPOT CLUSTERING
     cluster_id, cluster_name = clustering_service.predict_cluster(latitude, longitude)
 
@@ -98,8 +118,9 @@ async def create_complaint(
 
     complaint_ref = generate_complaint_id(db)
 
-    # Citizen workflow sets initial status: PENDING / ASSIGNED
-    initial_status = ComplaintStatus.PENDING.value
+    # Citizen workflow status: ASSIGNED if free worker assigned, else PENDING
+    initial_status = ComplaintStatus.ASSIGNED.value if assigned_worker else ComplaintStatus.PENDING.value
+    assigned_at = datetime.datetime.utcnow() if assigned_worker else None
 
     new_complaint = Complaint(
         complaint_id=complaint_ref,
@@ -111,6 +132,7 @@ async def create_complaint(
         ai_subcategory=classification_res.get("subcategory"),
         ai_confidence=classification_res.get("confidence"), # internal only
         department_id=department_id,
+        assigned_worker_id=assigned_worker.id if assigned_worker else None,
         priority=priority,
         impact_level=impact_level or "MEDIUM",
         status=initial_status,
@@ -125,7 +147,8 @@ async def create_complaint(
         is_duplicate=is_dup,
         duplicate_of_id=dup_of_id,
         original_prediction=predicted_category,
-        original_confidence=classification_res.get("confidence")
+        original_confidence=classification_res.get("confidence"),
+        assigned_at=assigned_at
     )
 
     db.add(new_complaint)
@@ -133,32 +156,62 @@ async def create_complaint(
     db.refresh(new_complaint)
 
     # Add initial status history
+    if assigned_worker:
+        history_comment = f"Complaint submitted and automatically assigned to free worker: {assigned_worker.name} ({assigned_worker.worker_code}, {assigned_worker.designation})."
+    else:
+        history_comment = f"Complaint submitted. No free worker currently available in {dept_name}. Placed in triage queue."
+
     history = ComplaintStatusHistory(
         complaint_id=new_complaint.id,
         status=initial_status,
         actor_id=current_user.id,
         actor_role=current_user.role,
-        comment="Complaint submitted and categorized."
+        comment=history_comment
     )
     db.add(history)
 
     # Create citizen confirmation notification
+    citizen_notif_msg = f"Your complaint {complaint_ref} has been received. Category: {predicted_category}"
+    if assigned_worker:
+        citizen_notif_msg += f". Assigned field worker: {assigned_worker.name} ({assigned_worker.designation})."
+
     create_notification(
         db=db,
         user_id=current_user.id,
         title="Complaint Registered Successfully",
-        message=f"Your complaint {complaint_ref} has been received. Category: {predicted_category}",
+        message=citizen_notif_msg,
         link=f"/citizen/complaints/{complaint_ref}"
     )
 
+    # Notify Department Admin of new complaint & worker assignment
+    if dept_code:
+        dept_admins = db.query(User).filter(
+            User.role == UserRole.DEPARTMENT_ADMIN.value,
+            User.department_code == dept_code
+        ).all()
+        for d_admin in dept_admins:
+            admin_notif_msg = f"New complaint {complaint_ref} ({predicted_category}) registered."
+            if assigned_worker:
+                admin_notif_msg += f" Automatically assigned to {assigned_worker.name} ({assigned_worker.worker_code})."
+            create_notification(
+                db=db,
+                user_id=d_admin.id,
+                title=f"New Complaint: {complaint_ref}",
+                message=admin_notif_msg,
+                link=f"/admin/complaints/{complaint_ref}"
+            )
+
     # Audit log
+    audit_new_val = f"Category: {predicted_category}, Cluster: {cluster_id}"
+    if assigned_worker:
+        audit_new_val += f", Assigned Worker: {assigned_worker.name} ({assigned_worker.worker_code})"
     log_audit_action(
         db=db,
         actor=current_user,
         action="CREATE_COMPLAINT",
         entity_type="COMPLAINT",
         entity_id=complaint_ref,
-        new_value=f"Category: {predicted_category}, Cluster: {cluster_id}"
+        new_value=audit_new_val
     )
 
     db.commit()
@@ -183,7 +236,18 @@ async def create_complaint(
         "latitude": latitude,
         "longitude": longitude,
         "image": saved_image_path,
-        "created_at": new_complaint.created_at.isoformat()
+        "created_at": new_complaint.created_at.isoformat(),
+        "assigned_worker": {
+            "id": assigned_worker.id,
+            "worker_code": assigned_worker.worker_code,
+            "name": assigned_worker.name,
+            "designation": assigned_worker.designation,
+            "phone": assigned_worker.phone,
+            "email": assigned_worker.email,
+            "worker_status": assigned_worker.worker_status
+        } if assigned_worker else None,
+        "assigned_worker_id": assigned_worker.id if assigned_worker else None,
+        "assigned_worker_name": assigned_worker.name if assigned_worker else None
     }
 
 @router.get("/my")
@@ -227,6 +291,15 @@ def get_citizen_complaints(
             "cluster_name": c_name,
             "image": c.images,
             "assigned_department_head": c.assigned_department_head,
+            "assigned_worker": {
+                "id": c.assigned_worker.id,
+                "worker_code": c.assigned_worker.worker_code,
+                "name": c.assigned_worker.name,
+                "designation": c.assigned_worker.designation,
+                "phone": c.assigned_worker.phone,
+                "worker_status": c.assigned_worker.worker_status
+            } if c.assigned_worker else None,
+            "assigned_worker_name": c.assigned_worker.name if c.assigned_worker else None,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "resolved_at": c.resolved_at.isoformat() if c.resolved_at else None
         })
@@ -284,6 +357,16 @@ def get_complaint_detail(
             "images": [complaint.images] if complaint.images else [],
             "resolution_description": complaint.resolution_description,
             "assigned_department_head": complaint.assigned_department_head,
+            "assigned_worker": {
+                "id": complaint.assigned_worker.id,
+                "worker_code": complaint.assigned_worker.worker_code,
+                "name": complaint.assigned_worker.name,
+                "designation": complaint.assigned_worker.designation,
+                "phone": complaint.assigned_worker.phone,
+                "email": complaint.assigned_worker.email,
+                "worker_status": complaint.assigned_worker.worker_status
+            } if complaint.assigned_worker else None,
+            "assigned_worker_name": complaint.assigned_worker.name if complaint.assigned_worker else None,
             "created_at": complaint.created_at.isoformat() if complaint.created_at else None,
             "resolved_at": complaint.resolved_at.isoformat() if complaint.resolved_at else None,
             "closed_at": complaint.closed_at.isoformat() if complaint.closed_at else None,

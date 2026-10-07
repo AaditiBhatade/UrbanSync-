@@ -3,7 +3,7 @@ import datetime
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from backend.models.models import Complaint, ComplaintStatusHistory, User, UserRole, ComplaintStatus
+from backend.models.models import Complaint, ComplaintStatusHistory, User, UserRole, ComplaintStatus, Worker
 from backend.middleware.auth_middleware import log_audit_action, create_notification
 from ml.classifier import classifier_instance
 
@@ -123,6 +123,20 @@ def validate_status_transition(current_status: str, new_status: str, user: User)
         allowed = VALID_TRANSITIONS.get(current_status, [])
         return new_status in allowed
 
+    if user.role == UserRole.FIELD_WORKER.value:
+        # Field Worker can transition assigned complaint:
+        # ASSIGNED -> ACKNOWLEDGED, IN_PROGRESS, RESOLVED
+        # ACKNOWLEDGED -> IN_PROGRESS, RESOLVED
+        # IN_PROGRESS -> RESOLVED
+        # REOPENED -> ACKNOWLEDGED, IN_PROGRESS, RESOLVED
+        if current_status in [ComplaintStatus.ASSIGNED.value, ComplaintStatus.REOPENED.value] and new_status in [ComplaintStatus.ACKNOWLEDGED.value, ComplaintStatus.IN_PROGRESS.value, ComplaintStatus.RESOLVED.value]:
+            return True
+        if current_status == ComplaintStatus.ACKNOWLEDGED.value and new_status in [ComplaintStatus.IN_PROGRESS.value, ComplaintStatus.RESOLVED.value]:
+            return True
+        if current_status == ComplaintStatus.IN_PROGRESS.value and new_status == ComplaintStatus.RESOLVED.value:
+            return True
+        return False
+
     return False
 
 def update_complaint_status(
@@ -151,6 +165,17 @@ def update_complaint_status(
         complaint.closed_at = datetime.datetime.utcnow()
     elif new_status == ComplaintStatus.REJECTED.value and rejection_reason:
         complaint.rejection_reason = rejection_reason
+
+    # Automatic Worker lifecycle: free worker on RESOLVED / CLOSED, occupy on REOPENED
+    if complaint.assigned_worker_id:
+        worker = db.query(Worker).filter(Worker.id == complaint.assigned_worker_id).first()
+        if worker:
+            if new_status in [ComplaintStatus.RESOLVED.value, ComplaintStatus.CLOSED.value]:
+                worker.worker_status = True  # Field worker is free again
+                worker.updated_at = datetime.datetime.utcnow()
+            elif new_status == ComplaintStatus.REOPENED.value:
+                worker.worker_status = False  # Worker occupied again
+                worker.updated_at = datetime.datetime.utcnow()
 
     # Add History record
     history = ComplaintStatusHistory(

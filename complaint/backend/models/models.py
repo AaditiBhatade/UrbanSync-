@@ -10,6 +10,7 @@ class UserRole(str, Enum):
     CITIZEN = "CITIZEN"
     DEPARTMENT_ADMIN = "DEPARTMENT_ADMIN"
     SUPER_ADMIN = "SUPER_ADMIN"
+    FIELD_WORKER = "FIELD_WORKER"
 
 class ComplaintStatus(str, Enum):
     PENDING = "PENDING"
@@ -67,6 +68,30 @@ class Department(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     complaints = relationship("Complaint", back_populates="department", foreign_keys="Complaint.department_id")
+    workers = relationship("Worker", back_populates="department", cascade="all, delete-orphan")
+
+class Worker(Base):
+    __tablename__ = "workers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    worker_code = Column(String(50), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    phone = Column(String(20), nullable=False)
+    department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    department_code = Column(String(50), nullable=False, index=True)
+    designation = Column(String(150), nullable=False)
+    worker_status = Column(Boolean, default=True, nullable=False)  # True = Free/Available, False = Busy/Assigned
+    skills = Column(String(255), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    # Relationships
+    department = relationship("Department", back_populates="workers")
+    user = relationship("User", foreign_keys=[user_id])
+    complaints = relationship("Complaint", back_populates="assigned_worker")
 
 class Complaint(Base):
     __tablename__ = "complaints"
@@ -82,6 +107,7 @@ class Complaint(Base):
     ai_confidence = Column(Float, nullable=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     assigned_admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    assigned_worker_id = Column(Integer, ForeignKey("workers.id"), nullable=True)
     priority = Column(String(20), default=PriorityLevel.MEDIUM.value)
     impact_level = Column(String(20), default="MEDIUM")
     status = Column(String(50), default=ComplaintStatus.PENDING.value)
@@ -118,6 +144,7 @@ class Complaint(Base):
     citizen = relationship("User", foreign_keys=[citizen_id], back_populates="complaints")
     department = relationship("Department", foreign_keys=[department_id], back_populates="complaints")
     assigned_admin = relationship("User", foreign_keys=[assigned_admin_id])
+    assigned_worker = relationship("Worker", foreign_keys=[assigned_worker_id], back_populates="complaints")
     override_department = relationship("Department", foreign_keys=[override_department_id])
     status_history = relationship("ComplaintStatusHistory", back_populates="complaint", cascade="all, delete-orphan")
 
